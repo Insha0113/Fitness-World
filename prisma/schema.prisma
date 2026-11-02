@@ -1,0 +1,403 @@
+// FITNESS WORLD — PostgreSQL schema (Prisma 7, connection URL lives in prisma.config.ts)
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------- enums
+
+enum Role {
+  MEMBER
+  ADMIN
+}
+
+enum MembershipStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  CREATED
+  PAID
+  FAILED
+}
+
+enum PaymentPurpose {
+  NEW_MEMBERSHIP
+  RENEWAL
+}
+
+enum BillingCycle {
+  MONTHLY
+  QUARTERLY
+  HALF_YEARLY
+  ANNUAL
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  CONVERTED
+  CLOSED
+}
+
+enum LeadIntent {
+  CONSULTATION
+  JOIN
+  PLAN_ENQUIRY
+  CALLBACK
+  PERSONAL_TRAINING
+  TRANSFORMATION
+  CONTACT
+  CHATBOT
+}
+
+enum FitnessGoal {
+  WEIGHT_LOSS
+  MUSCLE_BUILDING
+  STRENGTH
+  GENERAL_FITNESS
+  ENDURANCE
+  TRANSFORMATION
+}
+
+enum ContactTime {
+  MORNING
+  AFTERNOON
+  EVENING
+  ANYTIME
+}
+
+enum MealSlot {
+  BREAKFAST
+  MID_MORNING
+  LUNCH
+  EVENING_SNACK
+  DINNER
+}
+
+enum ContentKind {
+  VIDEO
+  TUTORIAL
+  TIP
+  CHALLENGE
+  ARTICLE
+  MOTIVATION
+}
+
+// ---------------------------------------------------------------- people
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  phone        String
+  passwordHash String
+  role         Role     @default(MEMBER)
+  /// Admin can disable an account; disabled users cannot log in.
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  profile        MemberProfile?
+  memberships    Membership[]
+  payments       Payment[]
+  savedMeals     SavedMeal[]
+  progress       ProgressEntry[]
+  workoutPlans   WorkoutPlan[]
+  resetTokens    PasswordResetToken[]
+  leadNotes      LeadNote[]
+
+  @@index([role])
+  @@index([createdAt])
+}
+
+model MemberProfile {
+  id               String       @id @default(cuid())
+  userId           String       @unique
+  user             User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goal             FitnessGoal?
+  emergencyContact String?
+  city             String?
+  trainerId        String?
+  trainer          Trainer?     @relation(fields: [trainerId], references: [id], onDelete: SetNull)
+  marketingOptIn   Boolean      @default(false)
+  updatedAt        DateTime     @updatedAt
+}
+
+model Trainer {
+  id        String          @id @default(cuid())
+  name      String
+  specialty String
+  bio       String?
+  imageUrl  String?
+  isActive  Boolean         @default(true)
+  members   MemberProfile[]
+  createdAt DateTime        @default(now())
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// SHA-256 of the token; the raw token is only ever in the email link.
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------- plans & billing
+
+model MembershipPlan {
+  id                      String       @id @default(cuid())
+  slug                    String       @unique
+  name                    String
+  tagline                 String
+  features                String[]
+  includesPersonalTraining Boolean     @default(false)
+  isFeatured              Boolean      @default(false)
+  isActive                Boolean      @default(true)
+  sortOrder               Int          @default(0)
+  prices                  PlanPrice[]
+  memberships             Membership[]
+  createdAt               DateTime     @default(now())
+  updatedAt               DateTime     @updatedAt
+}
+
+model PlanPrice {
+  id           String         @id @default(cuid())
+  planId       String
+  plan         MembershipPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  cycle        BillingCycle
+  /// Amount in paise (INR × 100). Integer to avoid float rounding.
+  amountPaise  Int
+  durationDays Int
+  isActive     Boolean        @default(true)
+  payments     Payment[]
+
+  @@unique([planId, cycle])
+}
+
+model Membership {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId    String
+  plan      MembershipPlan   @relation(fields: [planId], references: [id], onDelete: Restrict)
+  status    MembershipStatus @default(ACTIVE)
+  startsAt  DateTime
+  endsAt    DateTime
+  /// Set when an admin changes status manually, for the audit trail.
+  adminNote String?
+  payments  Payment[]
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@index([userId, status])
+  @@index([endsAt])
+}
+
+model Payment {
+  id                String         @id @default(cuid())
+  userId            String
+  user              User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  planPriceId       String
+  planPrice         PlanPrice      @relation(fields: [planPriceId], references: [id], onDelete: Restrict)
+  membershipId      String?
+  membership        Membership?    @relation(fields: [membershipId], references: [id], onDelete: SetNull)
+  purpose           PaymentPurpose
+  status            PaymentStatus  @default(CREATED)
+  /// Snapshot at order time, so later price edits never change history.
+  planName          String
+  cycle             BillingCycle
+  durationDays      Int
+  amountPaise       Int
+  currency          String         @default("INR")
+  razorpayOrderId   String         @unique
+  razorpayPaymentId String?        @unique
+  method            String?
+  failureReason     String?
+  receiptNumber     String         @unique
+  verifiedVia       String?
+  paidAt            DateTime?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+}
+
+/// Razorpay webhook event ids already processed — makes webhook handling idempotent.
+model WebhookEvent {
+  id         String   @id
+  event      String
+  receivedAt DateTime @default(now())
+}
+
+// ---------------------------------------------------------------- leads
+
+model Lead {
+  id          String       @id @default(cuid())
+  name        String
+  phone       String
+  email       String?
+  intent      LeadIntent
+  program     String?
+  planSlug    String?
+  goal        FitnessGoal?
+  contactTime ContactTime?
+  message     String?
+  sourcePath  String?
+  consentAt   DateTime
+  status      LeadStatus   @default(NEW)
+  notes       LeadNote[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([status, createdAt])
+  @@index([intent])
+  @@index([createdAt])
+}
+
+model LeadNote {
+  id        String   @id @default(cuid())
+  leadId    String
+  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  authorId  String?
+  author    User?    @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([leadId])
+}
+
+// ---------------------------------------------------------------- member content
+
+model ProgressEntry {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date       DateTime
+  weightKg   Decimal? @db.Decimal(5, 1)
+  waistCm    Decimal? @db.Decimal(5, 1)
+  sessions   Int?
+  note       String?
+  createdAt  DateTime @default(now())
+
+  @@index([userId, date])
+}
+
+model WorkoutPlan {
+  id          String       @id @default(cuid())
+  title       String
+  summary     String
+  goal        FitnessGoal?
+  level       String
+  /// Structured days: [{ day: "Day 1 — Push", exercises: [{ name, sets, reps, note? }] }]
+  days        Json
+  /// Null = library plan visible to all active members; set = assigned to one member.
+  userId      String?
+  user        User?        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isPublished Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([userId])
+}
+
+model Meal {
+  id          String        @id @default(cuid())
+  slug        String        @unique
+  name        String
+  slot        MealSlot
+  /// Fuel Studio section, e.g. breakfast | protein | muscle | weight-loss | snacks
+  category    String
+  goals       FitnessGoal[]
+  description String
+  imageUrl    String
+  /// Approximate values unless `isVerified` is true.
+  calories    Int
+  proteinG    Int
+  ingredients String[]
+  isVerified  Boolean       @default(false)
+  isPublished Boolean       @default(true)
+  sortOrder   Int           @default(0)
+  savedBy     SavedMeal[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([category])
+  @@index([slot])
+}
+
+model SavedMeal {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mealId    String
+  meal      Meal     @relation(fields: [mealId], references: [id], onDelete: Cascade)
+  slot      MealSlot
+  createdAt DateTime @default(now())
+
+  @@unique([userId, mealId])
+}
+
+model Testimonial {
+  id            String   @id @default(cuid())
+  clientName    String
+  quote         String
+  story         String?
+  program       String?
+  durationLabel String?
+  beforeImage   String?
+  afterImage    String?
+  /// Sample content shipped for layout only — rendered with a visible "sample" label.
+  isSample      Boolean  @default(false)
+  /// Must be true for a real (non-sample) testimonial to be published.
+  consentGiven  Boolean  @default(false)
+  isPublished   Boolean  @default(false)
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([isPublished, sortOrder])
+}
+
+model Announcement {
+  id          String   @id @default(cuid())
+  title       String
+  body        String
+  isPinned    Boolean  @default(false)
+  isPublished Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@index([isPublished, createdAt])
+}
+
+model ContentItem {
+  id           String      @id @default(cuid())
+  kind         ContentKind
+  title        String
+  summary      String
+  body         String?
+  videoUrl     String?
+  thumbnailUrl String
+  category     String
+  durationMin  Int?
+  /// One preview item per category can be shown to non-members.
+  isPreview    Boolean     @default(false)
+  isPublished  Boolean     @default(true)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@index([kind, isPublished])
+}

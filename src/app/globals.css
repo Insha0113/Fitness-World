@@ -1,0 +1,172 @@
+@import "tailwindcss";
+
+/* ------------------------------------------------------------------
+   FITNESS WORLD design tokens
+   Main site: pitch black, coal, bone white, furnace orange.
+   Fuel Studio (.theme-fuel): cream, sage, olive, peach, earth.
+   ------------------------------------------------------------------ */
+
+@theme {
+  --color-pitch: #000000;
+  --color-coal: #141312;
+  --color-iron: #24221f;
+  --color-line: #34302c;
+  --color-bone: #f3efe9;
+  --color-ash: #918b84;
+  --color-furnace: #ff5a1a;
+  --color-furnace-deep: #d9400a;
+  --color-ember: #ffa048;
+
+  /* Fuel Studio */
+  --color-cream: #faf5ec;
+  --color-oat: #efe5d4;
+  --color-sage: #9aab8a;
+  --color-sage-deep: #5f7356;
+  --color-olive: #6d6a3c;
+  --color-peach: #f4cdb3;
+  --color-earth: #4a3a2c;
+
+  --color-success: #3fb27f;
+  --color-danger: #ff5d5d;
+
+  --font-display: var(--font-big-shoulders), "Arial Narrow", sans-serif;
+  --font-sans: var(--font-archivo), system-ui, sans-serif;
+  --font-serif: var(--font-fraunces), Georgia, serif;
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --animate-heat: heat 1.6s var(--ease-out-expo) 0.9s both;
+  --animate-drift: drift 22s ease-in-out infinite alternate;
+  --animate-scrollcue: scrollcue 2.2s ease-in-out infinite;
+
+  @keyframes heat {
+    from { transform: scaleX(0); }
+    to { transform: scaleX(1); }
+  }
+  @keyframes drift {
+    from { transform: scale(1.04); }
+    to { transform: scale(1.16) translate3d(-1.5%, -1%, 0); }
+  }
+  @keyframes scrollcue {
+    0% { transform: translateY(-100%); }
+    60%, 100% { transform: translateY(220%); }
+  }
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html {
+  background: var(--color-pitch);
+  color: var(--color-bone);
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--color-pitch);
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.6;
+  overflow-x: clip;
+}
+
+::selection {
+  background: var(--color-furnace);
+  color: var(--color-pitch);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-ember);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+/* Display type: condensed, tight, uppercase — used for headlines only. */
+.display {
+  font-family: var(--font-display);
+  font-variation-settings: "opsz" 72;
+  font-weight: 800;
+  line-height: 0.88;
+  letter-spacing: -0.005em;
+  text-transform: uppercase;
+}
+
+/* Molten glow used on the primary CTA and the hero heat-line. */
+.heat-glow {
+  box-shadow:
+    0 0 0 1px rgb(255 90 26 / 0.6),
+    0 8px 30px -6px rgb(255 90 26 / 0.55);
+}
+.heat-glow:hover {
+  box-shadow:
+    0 0 0 1px rgb(255 160 72 / 0.9),
+    0 10px 44px -4px rgb(255 120 40 / 0.75);
+}
+
+.glass {
+  background: rgb(20 19 18 / 0.55);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+}
+
+/* Film grain overlay — cheap, static, adds the cinematic texture. */
+.grain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.08;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+
+/* Form controls on the dark theme */
+.field {
+  width: 100%;
+  background: var(--color-coal);
+  border: 1px solid var(--color-line);
+  border-radius: 6px;
+  padding: 0.8rem 0.95rem;
+  color: var(--color-bone);
+  font-size: 1rem;
+  transition: border-color 0.2s;
+}
+.field::placeholder { color: #6f6a64; }
+.field:focus { outline: none; border-color: var(--color-furnace); }
+.field[aria-invalid="true"] { border-color: var(--color-danger); }
+
+/* Fuel Studio theme scope */
+.theme-fuel {
+  color-scheme: light;
+  background: var(--color-cream);
+  color: var(--color-earth);
+}
+.theme-fuel ::selection {
+  background: var(--color-sage);
+  color: var(--color-cream);
+}
+.theme-fuel :focus-visible {
+  outline-color: var(--color-sage-deep);
+}
+.theme-fuel .field {
+  background: #fff;
+  border-color: #dccfb9;
+  color: var(--color-earth);
+}
+.theme-fuel .field:focus { border-color: var(--color-sage-deep); }
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media print {
+  html, body { background: #fff !important; }
+}
